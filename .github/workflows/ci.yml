@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0 # setup-uv publishes exact version tags only
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      # Offline only: the keyword rules answer through the real TypeSafe SDK. No keys, no cost.
+      - run: uv run pytest -q
+      - run: uv run triage ask "api.example.com is down for everyone since the deploy"
+      - run: uv run triage demo
+      - run: uv run triage grade

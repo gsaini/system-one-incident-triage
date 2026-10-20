@@ -1,0 +1,39 @@
+[project]
+name = "system-one-incident-triage"
+version = "0.1.0"
+description = "Incident triage as typed questions: a report in; severity, owner and four yes/no decisions out. Keyword rules vs a local model, through the TypeSafe SDK."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Gopal Saini" }]
+dependencies = [
+    "typesafe-sdk>=0.7.4",
+    # TypeSafe's drop-in LLM stand-in for TypeSafeClient; the openai extra talks to Ollama.
+    "system-one-adapter[openai]>=0.2.1,<0.3",
+]
+
+[project.scripts]
+triage = "incident_triage.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/incident_triage"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["incident_triage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
