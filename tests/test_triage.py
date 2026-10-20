@@ -3,7 +3,7 @@
 import pytest
 from typesafe_sdk import Noul
 
-from incident_triage.arms import NoModel, baseline_arm, ollama_arm
+from incident_triage.arms import NoModel, baseline_arm, constrained_by_default, ollama_arm
 from incident_triage.cli import main, render
 from incident_triage.form import LABELS, QUESTIONS, SEVERITY, TEAMS, answerer, state_for, ticked
 from incident_triage.grade import grade, load_incidents, markdown
@@ -82,3 +82,8 @@ def test_cli_runs_offline(capsys):
     assert main(["grade"]) == 0
     out = capsys.readouterr().out
     assert "Page the on-call now?" in out and "| keyword rules |" in out
+
+
+def test_cloud_models_get_prompted_json_and_local_ones_the_schema():
+    assert constrained_by_default("qwen2.5:7b") and constrained_by_default("tinyllama")
+    assert not constrained_by_default("minimax-m3.1-flash:cloud")

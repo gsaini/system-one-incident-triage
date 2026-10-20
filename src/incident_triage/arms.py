@@ -75,8 +75,14 @@ def baseline_arm(answerer: Answerer) -> Arm:
     return Arm("keyword rules", client)
 
 
-def ollama_arm(model: str = DEFAULT_OLLAMA, *, base_url: str = OLLAMA_URL) -> Arm:
-    """A local model, through the adapter's OpenAI-compatible Chat Completions provider."""
+def constrained_by_default(model: str) -> bool:
+    """Schema-constrained decoding for local models. `:cloud` models get JSON asked for in the prompt instead,
+    because Ollama's cloud route drops `response_format` and the model then answers in prose (minimax-m3.1-flash)."""
+    return not model.endswith(":cloud")
+
+
+def ollama_arm(model: str = DEFAULT_OLLAMA, *, base_url: str = OLLAMA_URL, constrained: bool | None = None) -> Arm:
+    """A model served by Ollama, through the adapter's OpenAI-compatible Chat Completions provider."""
     from system_one_adapter import SystemOneAdapterClient
     from system_one_adapter.providers.openai import OpenAIProvider
 
@@ -89,13 +95,15 @@ def ollama_arm(model: str = DEFAULT_OLLAMA, *, base_url: str = OLLAMA_URL) -> Ar
     if model not in served and f"{model}:latest" not in served:
         raise NoModel(f"Ollama doesn't have {model!r}; run `ollama pull {model}`.")
 
+    if constrained is None:
+        constrained = constrained_by_default(model)
     provider = OpenAIProvider(model, base_url=base_url, api_key="ollama", api="chat_completions")
     client = SystemOneAdapterClient(
-        structured_outputs=True,  # Ollama constrains decoding to the JSON schema
+        structured_outputs=constrained,  # True: Ollama constrains decoding to the schema. False: JSON in the prompt
         llm_answer_mode="probabilities",  # ask for a distribution, like Jev returns
         normalize_probabilities=True,  # rescale a distribution that doesn't sum to 1 instead of failing
         n_retry_malformed_structure=1,
         provider="openai",
         model=provider,
     )
-    return Arm(f"{model} (Ollama)", client)
+    return Arm(f"{model} (Ollama{'' if constrained else ', prompted JSON'})", client)

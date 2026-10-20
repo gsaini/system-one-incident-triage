@@ -58,6 +58,7 @@ ollama pull qwen2.5:7b                    # 4.7 GB; any Ollama model works: --ol
 uv run triage demo --ollama               # qwen2.5:7b by default
 uv run triage grade --ollama
 uv run triage grade --ollama --split      # one request per question instead of one per report
+uv run triage grade --ollama minimax-m3.1-flash:cloud   # an Ollama cloud model: not local, and the JSON is asked for in the prompt
 ```
 
 `triage ask` shows every player side by side. The bar is how much probability the player put on the box it ticked:
@@ -80,28 +81,42 @@ Jev itself is not wired in here on purpose: the live arms, the cost gates and th
 
 ## Results, 2026-10-19
 
-20 reports in [data/incidents.jsonl](data/incidents.jsonl), each labelled by hand with the six answers. A player is right when the box it ticks matches the label: the most likely severity level, the chosen team, or yes/no at p ≥ 0.5. `qwen2.5:7b` ran through Ollama on a laptop.
+20 reports in [data/incidents.jsonl](data/incidents.jsonl), each labelled by hand with the six answers. A player is right when the box it ticks matches the label: the most likely severity level, the chosen team, or yes/no at p ≥ 0.5. `qwen2.5:7b` (7B) ran through Ollama on a laptop. `minimax-m3.1-flash:cloud` (428B) ran on Ollama's cloud on 2026-10-20, during its free period: the one run here that is not local. Ollama's cloud route drops `response_format`, so for `:cloud` models the adapter asks for the JSON in the prompt instead; the arm picks that automatically and says so in its name.
 
-| question | keyword rules | qwen2.5:7b, one request per report | qwen2.5:7b, one request per question |
-|---|---|---|---|
-| How bad is it? | 17/20 | 3/20 | 4/20 |
-| Who should own it? | 17/20 | 0/20 | 0/20 |
-| Page the on-call now? | 19/20 | 13/20 | 12/20 |
-| Can customers see it? | 19/20 | 15/20 | 16/20 |
-| Is data at risk? | 19/20 | 18/20 | 10/20 |
-| Did a recent change cause it? | 20/20 | 17/20 | 14/20 |
-| severity within one level | 20/20 | 13/20 | 13/20 |
-| **all six right** | **12/20** | **0/20** | **0/20** |
-| answers the SDK rejected | 0 | 0 | 0 |
-| latency p50 / max, per request | 0 / 1 ms | 8,974 / 18,019 ms | 1,960 / 9,470 ms |
+| question | keyword rules | qwen2.5:7b, one request per report | qwen2.5:7b, one request per question | MiniMax M3.1 Flash, Ollama cloud |
+|---|---|---|---|---|
+| How bad is it? | 17/20 | 3/20 | 4/20 | 15/20 |
+| Who should own it? | 17/20 | 0/20 | 0/20 | **18/20** |
+| Page the on-call now? | 19/20 | 13/20 | 12/20 | 17/20 |
+| Can customers see it? | 19/20 | 15/20 | 16/20 | **20/20** |
+| Is data at risk? | 19/20 | 18/20 | 10/20 | 18/20 |
+| Did a recent change cause it? | 20/20 | 17/20 | 14/20 | 20/20 |
+| severity within one level | 20/20 | 13/20 | 13/20 | 20/20 |
+| **all six right** | **12/20** | **0/20** | **0/20** | **9/20** |
+| answers the SDK rejected | 0 | 0 | 0 | 0 |
+| latency p50 / max, per request | 0 / 1 ms | 8,974 / 18,019 ms | 1,960 / 9,470 ms | 7,190 / 16,187 ms |
+
+The checkout report through the big model, for comparison with the 7B output above:
+
+```text
+                               keyword rules                     minimax-m3.1-flash:cloud (Ollam…
+How bad is it?                 critical       ██████████  98%  critical       ██████████  99%
+Who should own it?             platform       █████░░░░░  54%  payments       ██████████  95%
+Page the on-call now?          yes            █████████░  90%  yes            ██████████ 100%
+Can customers see it?          yes            ████████░░  85%  yes            ██████████ 100%
+Is data at risk?               no             ██████████  95%  yes            ██████████  95%
+Did a recent change cause it?  yes            █████████░  90%  yes            ██████████ 100%
+
+time                           1 ms                             4,703 ms
+```
 
 What to make of it:
 
 - **The rules' score is the bar, not an achievement.** They were written with these 20 reports in view, so 12/20 with all six right is flattering. A model sees the reports cold. Jev would have to clear this bar on reports the rules have never seen.
-- **The model never breaks the form.** Ollama constrains its output to the schema, so all 240 answers were valid. That part of the post's type-safety claim is reproducible for free. The *values* are another matter.
-- **On the two questions with more than two answers, it hides.** Asked which team owns the checkout outage above, it put 0.67 on *unknown: can't tell from the report* and 0.33 on payments, with "Stripe" and "checkout" in the text. For a Safari legend bug it put 1.00 on *unknown*. An "I can't tell" option is where a small model goes to hide, and it took it on every report. The rules can only pick *unknown* when no team's words appear. If you give a Choice an escape hatch, measure how often it is taken.
-- **It under-rates severity.** "Degraded" at 0.80 for checkout down for every customer, and only 13/20 within one level of the label. The yes/no questions are where it is closest to useful, at 12–18 out of 20, which on 20 reports is 60–90% with wide error bars.
-- **Batching is not what breaks it.** One request per question gave the same owner and severity scores and shuffled the yes/no ones within noise (the model samples; two runs differ by a few answers). What batching did change is time: about 9 s per report as one request, about 12 s as six. The post's claim is that Jev answers the whole form in one 70–500 ms request, calibrated. That is the number to compare against, and this repo gives you the form and the labels to do it.
+- **Neither model breaks the form.** All 240 answers from each were valid: the 7B model because Ollama constrains its output to the schema, the 428B model with nothing but the JSON shape in its prompt. That part of the post's type-safety claim is reproducible for free. The *values* are another matter.
+- **The small model hides; the big one doesn't.** Asked which team owns the checkout outage, the 7B model put 0.67 on *unknown: can't tell from the report* and 0.33 on payments, with "Stripe" and "checkout" in the text; for a Safari legend bug it put 1.00 on *unknown*, and it took the escape hatch on every report. The 428B model picked the right team on 18 of 20, beating the rules, which can only say *unknown* when no team's words appear. An "I can't tell" option is where a weak model goes to hide. If you give a Choice one, measure how often it is taken.
+- **Severity separates them too.** The 7B model said "degraded" at 0.80 for checkout down for every customer and landed within one level of the label on 13/20; the 428B model got 15/20 exactly and 20/20 within one. Where the big model and the labels disagree it is often a judgement call: it says the checkout outage puts data at risk (orders are being lost), and the label says no.
+- **Batching is not what breaks the small model.** One request per question gave the same owner and severity scores and shuffled the yes/no ones within noise (the models sample; two runs differ by a few answers). What batching changes is time: about 9 s per report as one request, about 12 s as six, for the 7B model; 7 s per report for the 428B model over the network. The post's claim is that Jev answers the whole form in one 70–500 ms request, calibrated. That is the number to compare against, and this repo gives you the form and the labels to do it.
 
 ## How it works
 
@@ -109,14 +124,14 @@ What to make of it:
 src/incident_triage/
   form.py        the six questions, the plain-English labels, and the keyword rules
   baseline.py    the rules served through the real SDK over an httpx2.MockTransport (not Jev)
-  arms.py        Arm: one interface for the rules and a local model; per-call timing and errors
+  arms.py        Arm: one interface for the rules and an Ollama model, local or cloud; per-call timing and errors
   grade.py       the 20 labelled reports graded per question, batched or one question per request
   cli.py         `triage ask | demo | grade`
 data/            incidents.jsonl, written for this repo: 20 reports with six labels each
-tests/           9 offline tests: the SDK round trip, the rules on known reports, the grader, the CLI
+tests/           10 offline tests: the SDK round trip, the rules on known reports, the grader, the CLI
 ```
 
-The adapter asks the local model for a probability per option, in JSON constrained to the form's schema, and normalises a distribution that doesn't sum to one. Probabilities of exactly 1.00 everywhere, as in the example above, are the model's doing, not the adapter's.
+The adapter asks the model for a probability per option and normalises a distribution that doesn't sum to one. For a local model the JSON is constrained to the form's schema by Ollama; for a `:cloud` model the shape is asked for in the prompt, because Ollama's cloud route drops `response_format` and the model otherwise answers "No question or answer schema was provided" in prose. Probabilities of exactly 1.00 everywhere, as in the 7B example above, are the model's doing, not the adapter's.
 
 ## License
 
