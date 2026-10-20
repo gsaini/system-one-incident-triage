@@ -28,7 +28,7 @@ The whole form is one call, and code acts on the typed answers directly:
 from typesafe_sdk import TypeSafeClient
 from incident_triage.form import QUESTIONS, state_for
 
-response = TypeSafeClient().system_one(state_for(report), QUESTIONS)   # Jev, with a TYPESAFE_API_KEY
+response = TypeSafeClient().system_one(state_for(report), QUESTIONS)  # Jev, with a TYPESAFE_API_KEY
 
 if response.nouls["page_oncall"].noul >= 0.8:
     page(oncall_for(response.choices["owner"].choice))
